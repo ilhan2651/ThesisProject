@@ -2,3 +2,9 @@ fastapi
 uvicorn
 boto3
 transformers
+python-multipart
+numpy
+soundfile
+SpeechRecognition
+torch
+pydub
