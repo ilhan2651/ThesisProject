@@ -8,3 +8,5 @@ soundfile
 SpeechRecognition
 torch
 pydub
+sounddevice
+keyboard

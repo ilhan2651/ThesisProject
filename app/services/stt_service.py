@@ -6,6 +6,7 @@ import soundfile as sf
 import speech_recognition as sr
 import torch
 from pathlib import Path
+from pydub import AudioSegment  # ✅ MP3 desteği için eklendi
 from transformers import (
     Wav2Vec2FeatureExtractor,
     Wav2Vec2ForSequenceClassification
@@ -15,7 +16,7 @@ from transformers import (
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"🚀 Using device: {DEVICE}")
 
-# 🎭 **Duygu Analizi Modeli** (yükle + eval)
+# 🌽 **Duygu Analizi Modeli** (yükle + eval)
 _MODEL_NAME = "ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition"
 _feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(_MODEL_NAME)
 _emotion_model = (Wav2Vec2ForSequenceClassification
@@ -37,9 +38,17 @@ def _format_text(text: str) -> str:
     return text
 
 def transcribe_audio(path: str) -> str | None:
-    """Google Speech API ile metne çevirir."""
+    """Google Speech API ile metne çevirir. MP3 desteği var."""
     r = sr.Recognizer()
     r.dynamic_energy_threshold = True
+
+    # 🔥 MP3 dosyası ise WAV'e çevir
+    if path.endswith(".mp3"):
+        sound = AudioSegment.from_mp3(path)
+        wav_path = path.replace(".mp3", ".wav")
+        sound.export(wav_path, format="wav")
+        path = wav_path
+
     with sr.AudioFile(path) as src:
         r.adjust_for_ambient_noise(src, duration=0.5)
         audio = r.record(src)

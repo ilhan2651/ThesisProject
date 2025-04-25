@@ -2,28 +2,24 @@
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from pathlib import Path
-from app.others.Stt_Emo import transcribe_audio
+from app.services.stt_service import process_audio_file
 
-router = APIRouter(
-    prefix="/stt",
-    tags=["stt"]
-)
+router = APIRouter(prefix="/stt", tags=["stt"])
 
-@router.post("/transcribe")
-async def transcribe_endpoint(file: UploadFile = File(...)):
-    # 1) Kayıt klasörünü hazırla
+@router.post("/analyze")
+async def stt_analyze(file: UploadFile = File(...)):
+    # 1) Klasörü hazırla
     out_dir = Path("ses_dosyalari")
     out_dir.mkdir(exist_ok=True)
 
-    # 2) Gelen dosyayı kaydet
-    file_path = out_dir / file.filename
+    # 2) Dosyayı al ve kaydet
+    target = out_dir / file.filename
     content = await file.read()
-    file_path.write_bytes(content)
+    target.write_bytes(content)
 
-    # 3) Stt işlemini yap
-    text = transcribe_audio(str(file_path))
-    if text is None:
+    # 3) İşle (transcribe + emotion)
+    result = process_audio_file(str(target))
+    if not result["text"]:
         raise HTTPException(status_code=400, detail="Transcription failed")
 
-    # 4) JSON olarak metni dön
-    return {"text": text}
+    return result
