@@ -146,10 +146,15 @@ curl -X POST -H "Content-Type: application/json" \
 
 ## 👨‍💻 Author
 
-Developed by İlhan Randa  for a thesis project exploring emotion-enhanced speech interfaces for accessibility.
+Developed by İlhan Randa & Baturalp Kesici  for a thesis project exploring emotion-enhanced speech interfaces for accessibility.
 
 ---
 
 ## 📄 License
 
 This project is part of academic research and intended for educational and experimental
+![Image](https://github.com/user-attachments/assets/019ac77c-c0c8-4833-bc41-22e93754b694)
+
+![Image](https://github.com/user-attachments/assets/4408e26b-c463-479b-922b-37f0fb2bd7a7)
+
+![Image](https://github.com/user-attachments/assets/f458c60e-5b56-4a32-ac08-4e02547320be)
