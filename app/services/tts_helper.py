@@ -42,7 +42,6 @@ def handle_punctuation(text):
 def add_punctuation_effects(text): return handle_punctuation(text)
 
 def extend_adjectives(text):
-    # Kelimeleri uzatma kuralları
     extend_rules = {
         'amazing': 'amaaazing',
         'awesome': 'aweeeesome',
@@ -56,7 +55,6 @@ def extend_adjectives(text):
         'fantastic': 'fantaaastic'
     }
     
-    # Her kelimeyi kontrol et ve uzat
     words = text.split()
     for i, word in enumerate(words):
         word_lower = word.lower().strip(".,!?;:")
@@ -175,57 +173,45 @@ def get_contextual_ssml(sentence_emotions):
         curr_emo = current['emotion'].lower()
         keywords = emotion_keywords.get(curr_emo, [])
         
-        # Aynı duygu kontrolü
         if prev_emotion == curr_emo:
             emotion_streak += 1
         else:
             emotion_streak = 0
         
-        # 2. ve sonraki cümlelerde vurguyu artır
         is_emotion_intensified = emotion_streak >= 1
         
         for i, word in enumerate(words):
             word_lower = word.lower().strip(".,!?;:")
-            # Son kelime değilse normal emphasis uygula
             if i < len(words) - 1:
                 if word_lower in keywords:
-                    # Tüm anahtar kelimeler için moderate emphasis
                     words_ssml.append(f'<emphasis level="moderate">{word}</emphasis>')
                 else:
                     words_ssml.append(word)
-            # Son kelime için
             else:
                 if curr_emo == 'surprise':
-                    # Sadece surprise cümlelerinin son kelimesi için özel ayar
-                    words_ssml.append(f'<prosody pitch="+35%" rate="125%"><emphasis level="strong">{word}</emphasis></prosody>')
+                    words_ssml.append(f'<emphasis level="moderate">{word}</emphasis>')
                 else:
-                    # Diğer tüm duyguların son kelimeleri için normal okuma
                     words_ssml.append(word)
 
-        # Soru cümlesinde pitch yükseltme
         if sentence.strip().endswith('?'):
             sentence_ssml = f'<s><prosody pitch="+8%">{" ".join(words_ssml)}</prosody></s>'
         else:
-            # Duyguya göre cümle tonu ayarla
             if curr_emo in emotion_settings:
                 settings = emotion_settings[curr_emo]
                 sentence_ssml = f'<s><prosody pitch="{settings["pitch"]}" rate="{settings["rate"]}" volume="{settings["volume"]}">{" ".join(words_ssml)}</prosody></s>'
             else:
                 sentence_ssml = f'<s>{" ".join(words_ssml)}</s>'
         
-        # Uzun cümlelerde otomatik nefes arası
         if len(words) > 15:
             sentence_ssml = sentence_ssml.replace(' ', ' <break time="300ms"/> ', 1)
         
         ssml_parts.append(sentence_ssml)
         prev_emotion = curr_emo
     
-    # Noktalama işaretlerine göre break ekle
     ssml_body = smart_handle_punctuation(' '.join(ssml_parts))
     return f'<speak>{ssml_body}</speak>'
 
 def smart_handle_punctuation(text):
-    # Noktalama işaretlerine göre farklı break süreleri
     text = re.sub(r'\.(\s|$)', r'<break time="500ms"/>.', text)
     text = re.sub(r'!(\s|$)', r'<break time="400ms"/>!', text)
     text = re.sub(r'\?(\s|$)', r'<break time="600ms"/>?', text)

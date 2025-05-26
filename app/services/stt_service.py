@@ -57,14 +57,25 @@ def predict_emotion_from_audio(path):
     return {"emotion": _EMO_LABELS[pred], "confidence": conf}
 
 def process_audio_file(path):
+    print("\n=== Starting Audio Processing ===")
     raw_text = transcribe_audio(path)
     if not raw_text:
+        print("No text detected in audio")
         return {"text": "", "emotion": "neutral"}
+
+    print("\n=== Transcribed Text ===")
+    print(raw_text)
+    print("=== End of Transcribed Text ===\n")
 
     punctuated = _punctuation_model.restore_punctuation(raw_text)
     sentences = [s.strip() for s in re.split(r'[.!?]', punctuated) if s.strip()]
     sentences = [s[0].upper() + s[1:] if s else s for s in sentences]
     original_punctuation = re.findall(r'[.!?]', punctuated)
+
+    print("\n=== Detected Sentences ===")
+    for i, sent in enumerate(sentences):
+        print(f"Sentence {i+1}: {sent}")
+    print("=== End of Sentences ===\n")
 
     audio_data, sr = sf.read(path)
     if audio_data.ndim > 1:
@@ -84,30 +95,56 @@ def process_audio_file(path):
     if len(audio_data) - start_idx > sr:
         segments.append(audio_data[start_idx:])
 
+    print(f"\n=== Audio Segments ===")
+    print(f"Number of segments detected: {len(segments)}")
+    print("=== End of Audio Segments ===\n")
+
     audio_emotions, text_emotions = [], []
-    for sentence in sentences:
+    print("\n=== Text Emotion Analysis ===")
+    for i, sentence in enumerate(sentences):
         results = _text_emotion_analyzer(sentence)
         max_emo = max(results[0], key=lambda x: x['score'])
         text_emotions.append({"emotion": max_emo['label'], "confidence": max_emo['score']})
+        print(f"\nSentence {i+1}: {sentence}")
+        print("Detected emotions and scores:")
+        for emo in results[0]:
+            print(f"- {emo['label']}: {emo['score']:.4f}")
+    print("=== End of Text Emotion Analysis ===\n")
 
+    print("\n=== Audio Emotion Analysis ===")
     for i, segment in enumerate(segments):
         temp_path = f"temp_segment_{i}.wav"
         sf.write(temp_path, segment, sr)
         emo = predict_emotion_from_audio(temp_path)
-        if emo: audio_emotions.append(emo)
+        if emo:
+            audio_emotions.append(emo)
+            print(f"\nSegment {i+1}:")
+            print(f"Detected emotion: {emo['emotion']}")
+            print(f"Confidence: {emo['confidence']:.4f}")
         os.remove(temp_path)
+    print("=== End of Audio Emotion Analysis ===\n")
 
     final_emotions = []
+    print("\n=== Final Emotion Selection ===")
     for i in range(min(len(text_emotions), len(audio_emotions))):
         t, a = text_emotions[i], audio_emotions[i]
+        print(f"\nSentence {i+1}:")
+        print(f"Text emotion: {t['emotion']} (confidence: {t['confidence']:.4f})")
+        print(f"Audio emotion: {a['emotion']} (confidence: {a['confidence']:.4f})")
+        
         if t['emotion'] in ['fear', 'disgust'] or (t['confidence'] >= 0.8 and t['emotion'] != 'neutral'):
             final_emotions.append(t)
+            print(f"Selected: Text emotion (special case or high confidence)")
         elif t['emotion'] == 'neutral' and a['confidence'] >= 0.7:
             final_emotions.append(a)
+            print(f"Selected: Audio emotion (neutral text with high audio confidence)")
         elif a['confidence'] >= 0.7:
             final_emotions.append(a)
+            print(f"Selected: Audio emotion (high confidence)")
         else:
             final_emotions.append(t)
+            print(f"Selected: Text emotion (default case)")
+    print("=== End of Final Emotion Selection ===\n")
 
     # Duygu-emoji eşleştirmesi
     emotion_emojis = {
@@ -128,7 +165,7 @@ def process_audio_file(path):
     for i, (sent, emo) in enumerate(zip(sentences, final_emotions)):
         punctuation = original_punctuation[i] if i < len(original_punctuation) else "."
         emotion = emo['emotion']
-        emoji = emotion_emojis.get(emotion, "😐")  # Eğer duygu bulunamazsa nötr emoji kullan
+        emoji = emotion_emojis.get(emotion, "😐")
 
         if emotion == current_emotion:
             buffer.append(sent.strip() + punctuation)
@@ -144,7 +181,52 @@ def process_audio_file(path):
         text_with_emotions += " ".join(buffer)
 
     text_with_emotions = text_with_emotions.strip()
-    overall = _text_emotion_analyzer(punctuated)
-    overall_emo = max(overall[0], key=lambda x: x['score'])
+    
+    print("\n=== Overall Emotion Analysis ===")
+    # Overall emotion calculation considering both text and audio
+    text_overall = _text_emotion_analyzer(punctuated)
+    text_overall_emo = max(text_overall[0], key=lambda x: x['score'])
+    print("\nText-based overall emotions:")
+    for emo in text_overall[0]:
+        print(f"- {emo['label']}: {emo['score']:.4f}")
+    
+    # Calculate average audio emotion
+    audio_emotions_scores = {}
+    for emo in audio_emotions:
+        if emo['emotion'] in audio_emotions_scores:
+            audio_emotions_scores[emo['emotion']] += emo['confidence']
+        else:
+            audio_emotions_scores[emo['emotion']] = emo['confidence']
+    
+    # Normalize audio emotion scores
+    total_audio_score = sum(audio_emotions_scores.values())
+    if total_audio_score > 0:
+        audio_emotions_scores = {k: v/total_audio_score for k, v in audio_emotions_scores.items()}
+    
+    print("\nAudio-based emotion scores:")
+    for emotion, score in audio_emotions_scores.items():
+        print(f"- {emotion}: {score:.4f}")
+    
+    # Combine text and audio emotions with equal weights
+    combined_scores = {}
+    # Get all unique emotions from both text and audio
+    all_emotions = set([emo['label'] for emo in text_overall[0]] + list(audio_emotions_scores.keys()))
+    
+    for emotion in all_emotions:
+        # Get text score for this emotion
+        text_score = next((item['score'] for item in text_overall[0] if item['label'] == emotion), 0)
+        # Get audio score for this emotion
+        audio_score = audio_emotions_scores.get(emotion, 0)
+        # Equal weights for both text and audio
+        combined_scores[emotion] = 0.5 * text_score + 0.5 * audio_score
+    
+    print("\nCombined emotion scores:")
+    for emotion, score in combined_scores.items():
+        print(f"- {emotion}: {score:.4f}")
+    
+    overall_emo = max(combined_scores.items(), key=lambda x: x[1])
+    overall_emo = {'label': overall_emo[0], 'score': overall_emo[1]}
+    print(f"\nFinal overall emotion: {overall_emo['label']} (score: {overall_emo['score']:.4f})")
+    print("=== End of Overall Emotion Analysis ===\n")
 
     return {"text": text_with_emotions, "emotion": overall_emo['label']}
