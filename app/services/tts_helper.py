@@ -168,47 +168,43 @@ def get_contextual_ssml(sentence_emotions):
     
     for current in sentence_emotions:
         sentence = current['text']
-        words = sentence.split()
-        words_ssml = []
         curr_emo = current['emotion'].lower()
-        keywords = emotion_keywords.get(curr_emo, [])
+        settings = emotion_settings.get(curr_emo, emotion_settings['neutral'])
+        
+        if prev_emotion and prev_emotion != curr_emo:
+            ssml_parts.append('<break time="100ms"/>')
+            emotion_streak = 0
         
         if prev_emotion == curr_emo:
             emotion_streak += 1
         else:
             emotion_streak = 0
         
-        is_emotion_intensified = emotion_streak >= 1
+        if emotion_streak > 0 and (curr_emo == 'joy' or curr_emo == 'anger'):
+            rate = settings['rate'].replace('%', '')
+            rate = str(int(rate) + 5) + '%'
+            volume = 'x-loud' if settings['volume'] == 'loud' else 'loud'
+            sentence_ssml = f'<prosody rate="{rate}" pitch="{settings["pitch"]}" volume="{volume}">'
+        else:
+            sentence_ssml = f'<prosody rate="{settings["rate"]}" pitch="{settings["pitch"]}" volume="{settings["volume"]}">'
         
+        words = sentence.split()
         for i, word in enumerate(words):
             word_lower = word.lower().strip(".,!?;:")
+            
+            if word_lower in emotion_keywords.get(curr_emo, []):
+                sentence_ssml += f'<emphasis level="moderate">{word}</emphasis>'
+            else:
+                sentence_ssml += word
+            
             if i < len(words) - 1:
-                if word_lower in keywords:
-                    words_ssml.append(f'<emphasis level="moderate">{word}</emphasis>')
-                else:
-                    words_ssml.append(word)
-            else:
-                if curr_emo == 'surprise':
-                    words_ssml.append(f'<emphasis level="moderate">{word}</emphasis>')
-                else:
-                    words_ssml.append(word)
-
-        if sentence.strip().endswith('?'):
-            sentence_ssml = f'<s><prosody pitch="+8%">{" ".join(words_ssml)}</prosody></s>'
-        else:
-            if curr_emo in emotion_settings:
-                settings = emotion_settings[curr_emo]
-                sentence_ssml = f'<s><prosody pitch="{settings["pitch"]}" rate="{settings["rate"]}" volume="{settings["volume"]}">{" ".join(words_ssml)}</prosody></s>'
-            else:
-                sentence_ssml = f'<s>{" ".join(words_ssml)}</s>'
+                sentence_ssml += ' '
         
-        if len(words) > 15:
-            sentence_ssml = sentence_ssml.replace(' ', ' <break time="300ms"/> ', 1)
-        
-        ssml_parts.append(sentence_ssml)
+        sentence_ssml += '</prosody>'
+        ssml_parts.append(f'<s>{sentence_ssml}</s>')
         prev_emotion = curr_emo
     
-    ssml_body = smart_handle_punctuation(' '.join(ssml_parts))
+    ssml_body = ' '.join(ssml_parts)
     return f'<speak>{ssml_body}</speak>'
 
 def smart_handle_punctuation(text):
@@ -221,28 +217,92 @@ def smart_handle_punctuation(text):
     text = re.sub(r'\.{3}(\s|$)', r'<break time="700ms"/>...', text)
     return text.strip()
 
+def clean_text_for_ssml(text):
+    text = text.replace('&', 'and')
+    text = text.replace('"', '')
+    text = text.replace("'", '')
+    text = text.replace('<', '')
+    text = text.replace('>', '')
+    text = text.replace('"', '')
+    text = text.replace('"', '')
+    text = text.replace(''', '')
+    text = text.replace(''', '')
+    
+    text = ' '.join(text.split())
+    
+    return text
+
 def text_to_speech_and_emotion(text, output_file="output.mp3"):
     try:
-        text = text.strip().replace('&', 'and')
-        text = ''.join(char for char in text if char.isalnum() or char in ' .,!?-\'')
+        text = clean_text_for_ssml(text)
+        text = text.strip()
+        
+        print("\n=== Input Text ===")
+        print(text)
+        print("=== End of Input Text ===\n")
+        
         sentence_emotions = analyze_sentence_emotions(text)
+        print("\n=== Detected Emotions ===")
+        for emotion in sentence_emotions:
+            print(f"Text: {emotion['text']}")
+            print(f"Emotion: {emotion['emotion']}")
+            print(f"Score: {emotion['score']}")
+            print("---")
+        print("=== End of Detected Emotions ===\n")
+        
         overall_emotion, overall_score = determine_overall_emotion(sentence_emotions)
+        print(f"\nOverall Emotion: {overall_emotion}, Score: {overall_score}\n")
+        
         speech_text = get_contextual_ssml(sentence_emotions)
+        
+        if not speech_text.startswith('<speak>'):
+            speech_text = f'<speak>{speech_text}'
+        if not speech_text.endswith('</speak>'):
+            speech_text = f'{speech_text}</speak>'
+            
+        print("\n=== Generated SSML ===")
+        print(speech_text)
+        print("=== End of SSML ===\n")
+            
         polly_client = boto3.Session(
             aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
             aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
             region_name='eu-central-1'
         ).client('polly')
-        response = polly_client.synthesize_speech(
-            Text=speech_text,
-            TextType='ssml',
-            OutputFormat='mp3',
-            VoiceId='Joanna'
-        )
-        if 'AudioStream' in response:
-            with open(output_file, 'wb') as file:
-                file.write(response['AudioStream'].read())
-        return sentence_emotions
+        
+        try:
+            print("\n=== Attempting Polly Synthesis ===")
+            response = polly_client.synthesize_speech(
+                Text=speech_text,
+                TextType='ssml',
+                OutputFormat='mp3',
+                VoiceId='Joanna'
+            )
+            print("=== Polly Synthesis Successful ===\n")
+            
+            if 'AudioStream' in response:
+                with open(output_file, 'wb') as file:
+                    file.write(response['AudioStream'].read())
+                print(f"\n=== Audio saved to {output_file} ===\n")
+                return sentence_emotions
+            else:
+                print("\n=== No Audio Stream in Response ===")
+                return None
+                
+        except Exception as e:
+            print("\n=== Polly Error Details ===")
+            print(f"Error Type: {type(e)._name_}")
+            print(f"Error Message: {str(e)}")
+            if hasattr(e, 'response'):
+                print(f"AWS Response: {e.response}")
+            print("=== End of Error Details ===\n")
+            raise
+            
     except Exception as e:
-        print(f"An error occurred: {str(e)}")
+        print(f"\n=== Top Level Error ===")
+        print(f"Error Type: {type(e)._name_}")
+        print(f"Error Message: {str(e)}")
+        if hasattr(e, 'response'):
+            print(f"AWS Response: {e.response}")
+        print("=== End of Top Level Error ===\n")
         return None
